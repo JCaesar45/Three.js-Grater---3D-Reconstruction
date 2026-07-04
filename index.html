@@ -1,0 +1,336 @@
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Three.js Grater</title>
+  <style>
+    body {
+      margin: 0;
+      overflow: hidden;
+    }
+
+    #info {
+      position: absolute;
+      top: 20px;
+      left: 20px;
+      color: #ccc;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      font-size: 14px;
+      background: rgba(0, 0, 0, 0.6);
+      padding: 8px 16px;
+      border-radius: 8px;
+      pointer-events: none;
+      user-select: none;
+      z-index: 100;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="info">🧀 Grater • Drag to rotate • Scroll to zoom</div>
+
+  <script type="importmap">
+    {
+            "imports": {
+                "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import {
+      OrbitControls
+    } from 'three/addons/controls/OrbitControls.js';
+    // --- Setup Scene ---
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x222222); // dark grey background
+    // --- Camera ---
+    const camera = new THREE.PerspectiveCamera(30, window.innerWidth / window.innerHeight, 0.1, 100);
+    camera.position.set(3, 2.5, 4.5);
+    camera.lookAt(0, 0.3, 0);
+    // --- Renderer ---
+    const renderer = new THREE.WebGLRenderer({
+      antialias: true
+    });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.2;
+    document.body.appendChild(renderer.domElement);
+    // --- Controls ---
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.target.set(0, 0.3, 0);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.08;
+    controls.autoRotate = false;
+    controls.autoRotateSpeed = 0;
+    controls.update();
+    // --- Lights ---
+    // Ambient fill
+    const ambient = new THREE.AmbientLight(0x404060, 0.5);
+    scene.add(ambient);
+    // Key light (warm, from front-right-top)
+    const keyLight = new THREE.DirectionalLight(0xffeedd, 2.0);
+    keyLight.position.set(2, 5, 3);
+    keyLight.castShadow = true;
+    keyLight.shadow.mapSize.width = 1024;
+    keyLight.shadow.mapSize.height = 1024;
+    scene.add(keyLight);
+    // Fill light (cool, from left-back)
+    const fillLight = new THREE.DirectionalLight(0xccddff, 0.8);
+    fillLight.position.set(-3, 1, -2);
+    scene.add(fillLight);
+    // Rim light (from behind)
+    const rimLight = new THREE.DirectionalLight(0xffffff, 0.6);
+    rimLight.position.set(-1, 0.5, -4);
+    scene.add(rimLight);
+    // Soft floor bounce / accent
+    const bottomLight = new THREE.PointLight(0x446688, 0.3);
+    bottomLight.position.set(0, -1, 0);
+    scene.add(bottomLight);
+    // --- Helpers (optional) ---
+    // const gridHelper = new THREE.GridHelper(4, 20, 0x888888, 0x444444);
+    // scene.add(gridHelper);
+    // --- MAIN GRATER GROUP ---
+    const grater = new THREE.Group();
+    // ---- MATERIALS ----
+    const metalMaterial = new THREE.MeshStandardMaterial({
+      color: 0xc0c8d0,
+      roughness: 0.35,
+      metalness: 0.85,
+      emissive: 0x000000,
+      emissiveIntensity: 0
+    });
+    const darkMetalMaterial = new THREE.MeshStandardMaterial({
+      color: 0x889098,
+      roughness: 0.4,
+      metalness: 0.8
+    });
+    const handleMaterial = new THREE.MeshStandardMaterial({
+      color: 0x3a2c1b,
+      roughness: 0.7,
+      metalness: 0.1
+    });
+    const handleCapMaterial = new THREE.MeshStandardMaterial({
+      color: 0x5a4c3b,
+      roughness: 0.6,
+      metalness: 0.2
+    });
+    // ---- BODY: main container (tapered box with rounded feel) ----
+    // Use a box for the main body, with slight taper via scaling? 
+    // We'll construct a more detailed shape using a cylinder with different top/bottom radii.
+    // But a simpler approach: a box with a subtle trapezoid shape using CylinderGeometry with 4 sides? 
+    // Let's use a custom geometry: a tapered box with CylinderGeometry(radiusTop, radiusBottom, height, radialSegments)
+    // Actually, a grater is often a trapezoidal prism. We'll use a CylinderGeometry with 4 radial segments, 
+    // and then rotate to align edges. 
+    // But for better control, we'll use a BoxGeometry and scale it slightly, or use a custom geometry.
+    // Let's build a proper trapezoid using a custom BufferGeometry.
+    // However, for simplicity and stability, we can use a CylinderGeometry with 4 sides and different radii.
+    // That gives a perfect trapezoidal prism.
+    const bodyGeo = new THREE.CylinderGeometry(0.9, 1.1, 1.4, 4);
+    // Rotate so the flat edges align with axes (CylinderGeometry with 4 sides has vertices at 45°)
+    // We'll rotate it 45° around Y so the flat faces are front/back/sides.
+    const body = new THREE.Mesh(bodyGeo, metalMaterial);
+    body.rotation.y = Math.PI / 4;
+    body.castShadow = true;
+    body.receiveShadow = true;
+    grater.add(body);
+    // ---- GRATING SURFACE (front face details) ----
+    // We'll add a slightly recessed panel with bumps to simulate grating holes.
+    // Use a plane geometry and place it on the front face.
+    const panelGeo = new THREE.BoxGeometry(0.75, 0.45, 0.03);
+    const panelMat = new THREE.MeshStandardMaterial({
+      color: 0xb0b8c0,
+      roughness: 0.5,
+      metalness: 0.7
+    });
+    const panel = new THREE.Mesh(panelGeo, panelMat);
+    // Position on the front face (Z positive) of the trapezoid.
+    // Since the body is rotated, we need to find the front face.
+    // With rotation.y = PI/4, the front face is at (0, 0, 1.1) in local coords after rotation.
+    // Actually, the cylinder with 4 sides has vertices at 45°, so the faces are at angles 0°, 90°, etc.
+    // After rotating by 45°, the faces align with axes.
+    // So the front face is at +Z. We'll place the panel there.
+    panel.position.set(0, 0.05, 0.95);
+    panel.castShadow = true;
+    panel.receiveShadow = true;
+    grater.add(panel);
+    // Add small bumps (holes) on the panel
+    const bumpMat = new THREE.MeshStandardMaterial({
+      color: 0x889098,
+      roughness: 0.3,
+      metalness: 0.8
+    });
+    const holePositions = [
+      [-0.2, 0.1],
+      [0.0, 0.1],
+      [0.2, 0.1],
+      [-0.2, -0.05],
+      [0.0, -0.05],
+      [0.2, -0.05],
+      [-0.2, -0.2],
+      [0.0, -0.2],
+      [0.2, -0.2]
+    ];
+    // Add a few larger holes and smaller ones
+    holePositions.forEach(([x, y]) => {
+      const size = 0.04 + Math.random() * 0.04;
+      const hole = new THREE.Mesh(new THREE.SphereGeometry(size, 6, 6), bumpMat);
+      hole.position.set(x, y + 0.05, 0.98);
+      hole.scale.set(1, 1, 0.3);
+      hole.castShadow = true;
+      grater.add(hole);
+    });
+    // ---- HANDLE ----
+    const handleGroup = new THREE.Group();
+    // Main handle cylinder
+    const handleCylinder = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.18, 0.18, 0.55, 12),
+      handleMaterial
+    );
+    handleCylinder.rotation.x = Math.PI / 2;
+    handleCylinder.position.set(0, 0.45, 1.2);
+    handleCylinder.castShadow = true;
+    handleCylinder.receiveShadow = true;
+    grater.add(handleCylinder);
+    // Handle cap (rounded end)
+    const cap = new THREE.Mesh(
+      new THREE.SphereGeometry(0.2, 10, 10),
+      handleCapMaterial
+    );
+    cap.position.set(0, 0.45, 1.48);
+    cap.scale.set(1, 1, 0.6);
+    cap.castShadow = true;
+    cap.receiveShadow = true;
+    grater.add(cap);
+    // Handle base ring (where it meets the body)
+    const ring = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.22, 0.25, 0.06, 12),
+      darkMetalMaterial
+    );
+    ring.rotation.x = Math.PI / 2;
+    ring.position.set(0, 0.45, 0.95);
+    ring.castShadow = true;
+    ring.receiveShadow = true;
+    grater.add(ring);
+    // ---- LEGS ----
+    const legMaterial = new THREE.MeshStandardMaterial({
+      color: 0x9aa2aa,
+      roughness: 0.4,
+      metalness: 0.7
+    });
+    const legPositions = [
+      [-0.7, -0.55, -0.6],
+      [0.7, -0.55, -0.6],
+      [-0.7, -0.55, 0.6],
+      [0.7, -0.55, 0.6]
+    ];
+    legPositions.forEach(([x, y, z]) => {
+      const leg = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.08, 0.1, 0.2, 6),
+        legMaterial
+      );
+      leg.position.set(x, y - 0.7, z);
+      leg.castShadow = true;
+      leg.receiveShadow = true;
+      grater.add(leg);
+      // Add small foot pad
+      const pad = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.12, 0.08, 0.04, 6),
+        new THREE.MeshStandardMaterial({
+          color: 0x556066,
+          roughness: 0.6,
+          metalness: 0.3
+        })
+      );
+      pad.position.set(x, y - 0.82, z);
+      pad.castShadow = true;
+      pad.receiveShadow = true;
+      grater.add(pad);
+    });
+    // ---- ADDITIONAL DETAILS: side ridges / texture lines ----
+    // Add some vertical ridges on the sides for realism
+    const ridgeMat = new THREE.MeshStandardMaterial({
+      color: 0xaab2ba,
+      roughness: 0.5,
+      metalness: 0.6
+    });
+    for (let i = -0.6; i <= 0.6; i += 0.3) {
+      if (Math.abs(i) < 0.01) continue;
+      const ridge = new THREE.Mesh(
+        new THREE.BoxGeometry(0.02, 0.9, 0.02),
+        ridgeMat
+      );
+      ridge.position.set(i, 0.0, 0.7);
+      grater.add(ridge);
+      // mirror on back
+      const ridgeBack = new THREE.Mesh(
+        new THREE.BoxGeometry(0.02, 0.9, 0.02),
+        ridgeMat
+      );
+      ridgeBack.position.set(i, 0.0, -0.7);
+      grater.add(ridgeBack);
+    }
+    // Add some horizontal ridges on the sides
+    for (let y = -0.4; y <= 0.4; y += 0.25) {
+      const ridgeH = new THREE.Mesh(
+        new THREE.BoxGeometry(0.7, 0.02, 0.02),
+        ridgeMat
+      );
+      ridgeH.position.set(0, y, 0.7);
+      grater.add(ridgeH);
+      const ridgeHBack = new THREE.Mesh(
+        new THREE.BoxGeometry(0.7, 0.02, 0.02),
+        ridgeMat
+      );
+      ridgeHBack.position.set(0, y, -0.7);
+      grater.add(ridgeHBack);
+    }
+    // ---- FINALIZE ----
+    // Center the grater slightly above origin
+    grater.position.y = 0.3;
+    scene.add(grater);
+    // ---- GROUND / SHADOW RECEIVER (invisible but catches shadow) ----
+    const groundGeo = new THREE.PlaneGeometry(6, 6);
+    const groundMat = new THREE.ShadowMaterial({
+      opacity: 0.3,
+      color: 0x000000
+    });
+    const ground = new THREE.Mesh(groundGeo, groundMat);
+    ground.rotation.x = -Math.PI / 2;
+    ground.position.y = -0.55;
+    ground.receiveShadow = true;
+    scene.add(ground);
+    // ---- ENVIRONMENT (subtle) ----
+    // Add a faint hemisphere light
+    const hemiLight = new THREE.HemisphereLight(0x446688, 0x222222, 0.6);
+    scene.add(hemiLight);
+    // Small rim highlight from below
+    const bottomRim = new THREE.PointLight(0x335577, 0.2);
+    bottomRim.position.set(0, -1, 1);
+    scene.add(bottomRim);
+    // ---- RENDER LOOP ----
+    function animate() {
+      requestAnimationFrame(animate);
+      controls.update();
+      renderer.render(scene, camera);
+    }
+    animate();
+    // ---- RESIZE ----
+    window.addEventListener('resize', onWindowResize, false);
+
+    function onWindowResize() {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    }
+    console.log('Three.js Grater ready!');
+  </script>
+</body>
+
+</html>
