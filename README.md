@@ -1,4 +1,3 @@
-```markdown
 # Three.js Grater - 3D Reconstruction
 
 A 3D recreation of a real-world grater using Three.js. This project demonstrates how to build complex 3D objects from primitive geometries with realistic materials and lighting.
